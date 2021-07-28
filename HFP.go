@@ -37,7 +37,7 @@ func proxyConn(conn *net.TCPConn) {
 
 buf := make([]byte, 1024*8)
 
-	rConn, err := net.DialTimeout("tcp4", "10.116.118.51:9060", 5*time.Second)
+	rConn, err := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
 
 	if err != nil {
 		log.Println("||-->X Dial OUT error", err)
