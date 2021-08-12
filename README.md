@@ -8,7 +8,7 @@ It can be deployed locally to every HEP generating node within one premesis/DC/l
 
 From version 0.2 two modes of operation are supported.
 - Strict reliable HEP proxy mode without processing for high-performance
-- Reliable processing HEP proxy mode for filtering purposes to filter HEP by IP whether it is from HEP source or destination fields
+- Reliable processing HEP proxy mode for filtering purposes to filter HEP by IP whether it is from HEP source or destination fields. It is engaged when "ipf" switch is configured
 
 
 ### Usage
