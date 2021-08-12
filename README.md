@@ -6,10 +6,24 @@ Reliable way of relaying all your [HEP](http://hep.sipcapture.org) to any HEP re
 It is buffered TCP proxy with option of storing HEP locally in cases of backend HEP server unavailability and replaying of that HEP after HEP server becomes reachable again. It can be beneficial in highly distributed voice networks to reliably deliver your HEP to its destination without additional infrastructure.
 It can be deployed locally to every HEP generating node within one premesis/DC/location acting as addon (1:1) approach or HEP generating nodes can connect to one HFP that will   reliably proxy HEP generated within one premesis/DC/location (N:1)
 
+From version 0.2 2 modes of operatrion are supported.
+- Strict reliable HEP proxy mode without processing for high-performance
+- Reliable processing HEP proxy mode for filtering purposes to filter HEP by IP whether it is from HEP source or destination fields
+
 
 ### Usage
 ```
 ./HFP -l :9060 -r (HEP TCP server we want to reliably proxy HEP)
+
+Options:
+  -l string
+    	Local HEP listening address (default ":9060")
+  -r string
+    	Remote HEP address (default "192.168.2.2:9060")
+  -ipf string
+    	IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy
+  -ipfa string
+    	IP filter Action. Options are pass or reject (default "pass")
 ```
 
 ### Build
@@ -28,3 +42,8 @@ docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062
 
 
 <img width="794" alt="image" src="https://user-images.githubusercontent.com/37185376/127317842-3e65c362-8cc3-4666-9cd2-6495a5122a62.png">
+
+
+### Note
+
+HEP parser and decoder used from https://github.com/sipcapture/heplify-server Heplify-server project
