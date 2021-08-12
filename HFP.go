@@ -113,7 +113,7 @@ func proxyConn(conn *net.TCPConn) {
 		}
 
 //         log.Printf("-->|| Received HEP packet:%q", string(buf[:data]))
-         log.Println("-->|| Got", data, "bytes -- Total buffer size:", len(buf))
+         log.Println("-->|| Got", data, "bytes on wire -- Total buffer size:", len(buf))
 
 	if *IPfilter != "" && *IPfilterAction == "pass" && string(buf[:3]) == "HEP" {
 		hepPkt, err := DecodeHEP(buf[:data])
@@ -168,7 +168,6 @@ func proxyConn(conn *net.TCPConn) {
 
 		var rejected bool = false
 		for _, ipf := range filterIPs {
-			log.Printf("IPFFFFF", ipf)
 			if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) {
 				conn.Write([]byte("Rejecting IP"))
                 		log.Printf("-->X|| Rejecting IP:%q", ipf)
@@ -192,7 +191,7 @@ func proxyConn(conn *net.TCPConn) {
                         }
 
                         log.Println("||--> Sending HEP OUT successful with filter to", rConn.RemoteAddr())
-                        return
+                        //return
 		}
 
 	} else if  *IPfilter == "" && string(buf[:3]) == "HEP" {
@@ -268,7 +267,7 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPfilterAction: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction)
+	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPFilterAction: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction)
 	if *IPfilter == "" {
 		fmt.Printf("HFP started in proxy high performance mode\n__________________________________________\n")
 	} else {
