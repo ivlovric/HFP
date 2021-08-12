@@ -1,11 +1,9 @@
-NAME?=HFP
-
 all:
-        go build -ldflags "-s -w"  -o $(NAME) *.go
+	go build -ldflags "-s -w"  -o HFP *.go
 
 debug:
-        go build -o $(NAME) *.go
+	go build -o HFP *.go
 
 .PHONY: clean
 clean:
-        rm -fr $(NAME)
+	rm -fr HFP
