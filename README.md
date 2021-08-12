@@ -6,7 +6,7 @@ Reliable way of relaying all your [HEP](http://hep.sipcapture.org) to any HEP re
 It is buffered TCP proxy with option of storing HEP locally in cases of backend HEP server unavailability and replaying of that HEP after HEP server becomes reachable again. It can be beneficial in highly distributed voice networks to reliably deliver your HEP to its destination without additional infrastructure.
 It can be deployed locally to every HEP generating node within one premesis/DC/location acting as addon (1:1) approach or HEP generating nodes can connect to one HFP that will   reliably proxy HEP generated within one premesis/DC/location (N:1)
 
-From version 0.2 2 modes of operatrion are supported.
+From version 0.2 two modes of operation are supported.
 - Strict reliable HEP proxy mode without processing for high-performance
 - Reliable processing HEP proxy mode for filtering purposes to filter HEP by IP whether it is from HEP source or destination fields
 
