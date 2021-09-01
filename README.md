@@ -35,7 +35,7 @@ make
 ###### Docker
 ```
 docker build -t sipcapture/HFP .
-docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062
+docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <comma separated IP addresses> -ipfa <action for "ipf" list>)
 ```
 
 ### Flow Diagrams
