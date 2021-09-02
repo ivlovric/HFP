@@ -102,8 +102,10 @@ func proxyConn(conn *net.TCPConn) {
 		data, err_inconn := conn.Read(buf)
 		if err_inconn != nil {
 			log.Println("-->X||Read IN packets error:", err_inconn)
+			AppLogger.Println("-->X||Read IN packets error:", err_inconn)
 			if err_inconn != io.EOF {
 				log.Println("-->X||Read IN packets error:", err_inconn)
+				AppLogger.Println("-->X||Read IN packets error:", err_inconn)
 			}
 			return
 		}
@@ -258,7 +260,10 @@ func proxyConn(conn *net.TCPConn) {
 			conn.Write([]byte("Not HEP - C'mon"))
 			log.Println("-->|| Got NON HEP", data, "bytes")
 			AppLogger.Println("-->|| Got NON HEP", data, "bytes")
-			//log.Printf("-->|| Received NON HEP packet:%q", string(buf[:data]))
+			if *Debug == "on" {
+				log.Printf("-->|| NON HEP packet content:%q", string(buf[:data]))
+				AppLogger.Println("-->|| NON HEP packet content:", string(buf[:data]))
+			}
 		}
 	}
 
@@ -277,7 +282,6 @@ func proxyConn(conn *net.TCPConn) {
 			}
 		}
 	}
-
 }
 
 func handleConn(in <-chan *net.TCPConn, out chan<- *net.TCPConn) {
