@@ -16,7 +16,11 @@ var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
 var IPfilter *string = flag.String("ipf", "", "IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy")
 var IPfilterAction *string = flag.String("ipfa", "pass", "IP filter Action. Options are pass or reject")
+var Debug *string = flag.String("d", "off", "Debug options are off or on")
+
 var filterIPs []string
+var HFPlog string = "HFP.log"
+var HEPsavefile string = "HEP/HEP-saved.arch"
 
 var (
 	AppLogger *log.Logger
@@ -41,7 +45,7 @@ func copyHEPtoFile(innet *net.TCPConn, file string) (int64, error) {
 
 func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
 
-	HEPFileData, HEPFileDataerr := ioutil.ReadFile("HEP/HEP-saved.arch")
+	HEPFileData, HEPFileDataerr := ioutil.ReadFile(HEPsavefile)
 	if HEPFileDataerr != nil {
 		fmt.Println("Read HEP file error", HEPFileDataerr)
 	}
@@ -55,7 +59,7 @@ func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
 		AppLogger.Println("||-->X Send HEP from LOG error", err)
 	} else {
 
-		fi, err := os.Stat("HEP/HEP-saved.arch")
+		fi, err := os.Stat(HEPsavefile)
 		if err != nil {
 			log.Println("Cannot stat HEP log file", err)
 			AppLogger.Println("Cannot stat HEP log file", err)
@@ -67,8 +71,7 @@ func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
 			AppLogger.Println("||-->V Send HEP from LOG OK -", hl, "bytes")
 			AppLogger.Println("Clearing HEP file")
 			//Recreate file, thus cleaning the content
-			os.Create("HEP/HEP-saved.arch")
-
+			os.Create(HEPsavefile)
 		}
 	}
 
@@ -110,14 +113,16 @@ func proxyConn(conn *net.TCPConn) {
 			log.Println("Error decoding HEP", err)
 		}
 
-		//log.Println("HEP decoded ", hepPkt)
-		log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
-		log.Println("HEP decoded DST IP", hepPkt.DstIP)
+		if *Debug == "on" {
+			//log.Println("HEP decoded ", hepPkt)
+			log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
+			log.Println("HEP decoded DST IP", hepPkt.DstIP)
+		}
 
 		for _, ipf := range filterIPs {
 			if ((hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf)) && string(buf[:3]) == "HEP" && *IPfilter != "" && *IPfilterAction == "pass") || (string(buf[:3]) == "HEP" && *IPfilter == "" || (hepPkt.SrcIP != string(ipf) || hepPkt.DstIP != string(ipf)) && string(buf[:3]) == "HEP" && *IPfilter != "" && *IPfilterAction == "reject") {
 
-				go copyHEPtoFile(conn, "HEP/HEP-saved.arch")
+				go copyHEPtoFile(conn, HEPsavefile)
 			}
 		}
 
@@ -139,7 +144,7 @@ func proxyConn(conn *net.TCPConn) {
 	} else {
 		log.Println("||--> Connected OUT", rConn.RemoteAddr())
 		AppLogger.Println("||--> Connected OUT", rConn.RemoteAddr())
-		copyHEPFileOut("HEP/HEP-saved.arch", rConn)
+		copyHEPFileOut(HEPsavefile, rConn)
 
 	}
 
@@ -156,7 +161,9 @@ func proxyConn(conn *net.TCPConn) {
 			break
 		}
 
-		log.Println("-->|| Got", data, "bytes on wire -- Total buffer size:", len(buf))
+		if *Debug == "on" {
+			log.Println("-->|| Got", data, "bytes on wire -- Total buffer size:", len(buf))
+		}
 
 		if *IPfilter != "" && *IPfilterAction == "pass" && string(buf[:3]) == "HEP" {
 			hepPkt, err := DecodeHEP(buf[:data])
@@ -164,9 +171,11 @@ func proxyConn(conn *net.TCPConn) {
 				log.Println("Error decoding HEP", err)
 			}
 
-			//log.Println("HEP decoded ", hepPkt)
-			log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
-			log.Println("HEP decoded DST IP", hepPkt.DstIP)
+			if *Debug == "on" {
+				//log.Println("HEP decoded ", hepPkt)
+				log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
+				log.Println("HEP decoded DST IP", hepPkt.DstIP)
+			}
 
 			var accepted bool = false
 			for _, ipf := range filterIPs {
@@ -176,20 +185,23 @@ func proxyConn(conn *net.TCPConn) {
 					if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 						log.Println("||--> Sending HEP OUT error:", err_HEPout)
 						//	rb := bytes.NewReader(buf[:data])
-						go copyHEPtoFile(conn, "HEP/HEP-saved.arch")
+						go copyHEPtoFile(conn, HEPsavefile)
 						accepted = true
 						return
 					} else {
-						log.Println("||--> Sending HEP OUT successful with filter for", string(ipf), "to", rConn.RemoteAddr())
+						if *Debug == "on" {
+							log.Println("||--> Sending HEP OUT successful with filter for", string(ipf), "to", rConn.RemoteAddr())
+						}
 						accepted = true
 
 					}
-
 				}
 			}
 
 			if accepted == false {
-				log.Println("-->X|| HEP filter not matched with source or destination IP in HEP packet", hepPkt.SrcIP, "or", hepPkt.DstIP)
+				if *Debug == "on" {
+					log.Println("-->X|| HEP filter not matched with source or destination IP in HEP packet", hepPkt.SrcIP, "or", hepPkt.DstIP)
+				}
 			}
 
 		} else if *IPfilter != "" && *IPfilterAction == "reject" && string(buf[:3]) == "HEP" {
@@ -198,15 +210,19 @@ func proxyConn(conn *net.TCPConn) {
 				log.Println("Error decoding HEP", err)
 			}
 
-			//log.Println("HEP decoded ", hepPkt)
-			log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
-			log.Println("HEP decoded DST IP", hepPkt.DstIP)
+			if *Debug == "on" {
+				//log.Println("HEP decoded ", hepPkt)
+				log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
+				log.Println("HEP decoded DST IP", hepPkt.DstIP)
+			}
 
 			var rejected bool = false
 			for _, ipf := range filterIPs {
 				if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) {
 					conn.Write([]byte("Rejecting IP"))
-					log.Printf("-->X|| Rejecting IP:%q", ipf)
+					if *Debug == "on" {
+						log.Printf("-->X|| Rejecting IP:%q", ipf)
+					}
 					rejected = true
 					break
 				}
@@ -217,10 +233,12 @@ func proxyConn(conn *net.TCPConn) {
 				if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 					log.Println("||--> Sending HEP OUT error:", err_HEPout)
 					//rb := bytes.NewReader(buf[:data])
-					go copyHEPtoFile(conn, "HEP/HEP-saved.arch")
+					go copyHEPtoFile(conn, HEPsavefile)
 					return
 				} else {
-					log.Println("||--> Sending HEP OUT successful with filter to", rConn.RemoteAddr())
+					if *Debug == "on" {
+						log.Println("||--> Sending HEP OUT successful with filter to", rConn.RemoteAddr())
+					}
 				}
 			}
 
@@ -229,15 +247,17 @@ func proxyConn(conn *net.TCPConn) {
 			if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 				log.Println("||--> Sending HEP OUT error:", err_HEPout)
 				// rb := bytes.NewReader(buf[:data])
-				go copyHEPtoFile(conn, "HEP/HEP-saved.arch")
+				go copyHEPtoFile(conn, HEPsavefile)
 				return
 			} else {
-
-				log.Println("||--> Sending HEP OUT successful without filters to", rConn.RemoteAddr())
+				if *Debug == "on" {
+					log.Println("||--> Sending HEP OUT successful without filters to", rConn.RemoteAddr())
+				}
 			}
 		} else {
 			conn.Write([]byte("Not HEP - C'mon"))
 			log.Println("-->|| Got NON HEP", data, "bytes")
+			AppLogger.Println("-->|| Got NON HEP", data, "bytes")
 			//log.Printf("-->|| Received NON HEP packet:%q", string(buf[:data]))
 		}
 	}
@@ -251,8 +271,10 @@ func proxyConn(conn *net.TCPConn) {
 			AppLogger.Println("||<-- Received:", err)
 			return
 		} else {
-			log.Println("||<-- Received:", err, data[:n])
-			AppLogger.Println("||<-- Received:", err, data[:n])
+			if *Debug == "on" {
+				log.Println("||<-- Received:", err, data[:n])
+				AppLogger.Println("||<-- Received:", err, data[:n])
+			}
 		}
 	}
 
@@ -281,10 +303,10 @@ func main() {
 		log.Println(errmkdir)
 	}
 
-	if _, errhfexist := os.Stat("./HEP/HEP-saved.arch"); errhfexist != nil {
+	if _, errhfexist := os.Stat(HEPsavefile); errhfexist != nil {
 		if os.IsNotExist(errhfexist) {
 			fmt.Println("HEP File doesnt exists - Creating", errhfexist)
-			_, errhfcreate := os.Create("./HEP/HEP-saved.arch")
+			_, errhfcreate := os.Create(HEPsavefile)
 			fmt.Println("-->|| Creating HEP file")
 			if errhfcreate != nil {
 				fmt.Println("Create file error", errhfcreate)
@@ -293,13 +315,13 @@ func main() {
 		}
 	}
 
-	applog, err := os.OpenFile("HFP.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	applog, err := os.OpenFile(HFPlog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
 	AppLogger = log.New(applog, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	fi, err := os.Stat("HEP/HEP-saved.arch")
+	fi, err := os.Stat(HEPsavefile)
 	if err != nil {
 		log.Println(err)
 	}
