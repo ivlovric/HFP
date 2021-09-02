@@ -24,6 +24,8 @@ Options:
     	IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy
   -ipfa string
     	IP filter Action. Options are pass or reject (default "pass")
+  -d string
+    	Debug options are off or on (default "off")
 ```
 
 ### Build
@@ -35,7 +37,7 @@ make
 ###### Docker
 ```
 docker build -t sipcapture/HFP .
-docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <comma separated IP addresses> -ipfa <action for "ipf" list>)
+docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <comma separated IP addresses> -ipfa <action for "ipf" list> -d <on>)
 ```
 
 ### Flow Diagrams
