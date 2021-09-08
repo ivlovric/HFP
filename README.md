@@ -26,6 +26,8 @@ Options:
     	IP filter Action. Options are pass or reject (default "pass")
   -d string
     	Debug options are off or on (default "off")
+  -prom string
+    	Prometheus metrics port (default "8090")
 ```
 
 ### Build
@@ -37,7 +39,7 @@ make
 ###### Docker
 ```
 docker build -t sipcapture/HFP .
-docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <comma separated IP addresses> -ipfa <action for "ipf" list> -d <on>)
+docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <comma separated IP addresses> -ipfa <action for "ipf" list> -d <on> -prom <Prometheus port>)
 ```
 
 ### Flow Diagrams
