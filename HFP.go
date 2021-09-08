@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,7 @@ var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP addres
 var IPfilter *string = flag.String("ipf", "", "IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy")
 var IPfilterAction *string = flag.String("ipfa", "pass", "IP filter Action. Options are pass or reject")
 var Debug *string = flag.String("d", "off", "Debug options are off or on")
+var PrometheusPort *string = flag.String("prom", "8090", "Prometheus metrics port")
 
 var filterIPs []string
 var HFPlog string = "HFP.log"
@@ -39,7 +41,9 @@ func copyHEPtoFile(innet *net.TCPConn, file string) (int64, error) {
 		fmt.Println("Copy to FILE error\n", errcopyfile)
 	}
 
+	go hepBytesInFile.Add(float64(nBytes))
 	//destination.Flush()
+
 	return nBytes, errcopyfile
 }
 
@@ -57,6 +61,7 @@ func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
 	if err != nil {
 		log.Println("||-->X Send HEP from LOG error", err)
 		AppLogger.Println("||-->X Send HEP from LOG error", err)
+		hepFileFlushesError.Inc()
 	} else {
 
 		fi, err := os.Stat(HEPsavefile)
@@ -72,6 +77,7 @@ func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
 			AppLogger.Println("Clearing HEP file")
 			//Recreate file, thus cleaning the content
 			os.Create(HEPsavefile)
+			hepFileFlushesSuccess.Inc()
 		}
 	}
 
@@ -98,7 +104,7 @@ func proxyConn(conn *net.TCPConn) {
 	if err != nil {
 		log.Println("||-->X Dial OUT error", err)
 		AppLogger.Println("|| -->X Dial OUT error", err)
-
+		connectionStatus.Set(0)
 		data, err_inconn := conn.Read(buf)
 		if err_inconn != nil {
 			log.Println("-->X||Read IN packets error:", err_inconn)
@@ -106,10 +112,12 @@ func proxyConn(conn *net.TCPConn) {
 			if err_inconn != io.EOF {
 				log.Println("-->X||Read IN packets error:", err_inconn)
 				AppLogger.Println("-->X||Read IN packets error:", err_inconn)
+				connectionStatus.Set(0)
 			}
 			return
 		}
 
+		connectionStatus.Set(1)
 		hepPkt, err := DecodeHEP(buf[:data])
 		if err != nil {
 			log.Println("Error decoding HEP", err)
@@ -130,6 +138,7 @@ func proxyConn(conn *net.TCPConn) {
 
 		log.Printf("-->|| Receiving HEP to LOG")
 		AppLogger.Println("-->|| Receiving HEP to LOG")
+		connectionStatus.Set(0)
 
 		//Connection retries
 		for range time.Tick(time.Second * 10) {
@@ -146,8 +155,8 @@ func proxyConn(conn *net.TCPConn) {
 	} else {
 		log.Println("||--> Connected OUT", rConn.RemoteAddr())
 		AppLogger.Println("||--> Connected OUT", rConn.RemoteAddr())
+		connectionStatus.Set(1)
 		copyHEPFileOut(HEPsavefile, rConn)
-
 	}
 
 	defer rConn.Close()
@@ -160,7 +169,7 @@ func proxyConn(conn *net.TCPConn) {
 			if err_inconn != io.EOF {
 				log.Println("-->X||Read IN packets error:", err_inconn)
 			}
-			break
+			return
 		}
 
 		if *Debug == "on" {
@@ -260,6 +269,7 @@ func proxyConn(conn *net.TCPConn) {
 			conn.Write([]byte("Not HEP - C'mon"))
 			log.Println("-->|| Got NON HEP", data, "bytes")
 			AppLogger.Println("-->|| Got NON HEP", data, "bytes")
+			nonHEPPackets.Inc()
 			if *Debug == "on" {
 				log.Printf("-->|| NON HEP packet content:%q", string(buf[:data]))
 				AppLogger.Println("-->|| NON HEP packet content:", string(buf[:data]))
@@ -299,6 +309,8 @@ func closeConn(in <-chan *net.TCPConn) {
 
 func main() {
 
+	var wg sync.WaitGroup
+
 	flag.Parse()
 	filterIPs = strings.Split(*IPfilter, ",")
 
@@ -331,8 +343,9 @@ func main() {
 	}
 	fmt.Printf("Saved HEP file is %d bytes long\n", fi.Size())
 
-	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPFilterAction: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction)
-	AppLogger.Println("Listening for HEP on:", *localAddr, "\n", "Proxying HEP to:", *remoteAddr, "\n", "IPFilter:", *IPfilter, "\n", "IPFilterAction:", *IPfilterAction, "\n")
+	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPFilterAction: %v\nPrometheus metrics: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction, *PrometheusPort)
+	AppLogger.Println("Listening for HEP on:", *localAddr, "\n", "Proxying HEP to:", *remoteAddr, "\n", "IPFilter:", *IPfilter, "\n", "IPFilterAction:", *IPfilterAction, "\n", "Prometheus metrics:", *PrometheusPort, "\n")
+
 	if *IPfilter == "" {
 		fmt.Printf("HFP started in proxy high performance mode\n__________________________________________\n")
 		AppLogger.Println("HFP started in proxy high performance mode\n__________________________________________\n")
@@ -358,12 +371,15 @@ func main() {
 	for i := 1; i <= 4; i++ {
 		go handleConn(pending, complete)
 	}
+	go startMetrics(&wg)
+	wg.Wait()
 	go closeConn(complete)
 
 	for {
 		conn, err := listener.AcceptTCP()
 		log.Println("-->|| New connection from", conn.RemoteAddr())
 		AppLogger.Println("-->|| New connection from", conn.RemoteAddr())
+		connectedClients.Inc()
 
 		if err != nil {
 			log.Println(err)
