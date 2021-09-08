@@ -49,6 +49,8 @@ docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <com
 
 
 ### Metrics
+Metrics are accessable on port 8090 unless port is changed by option flag. Example: http://HFP:8090/metrics
+
 Prometheus metrics in grafana
 
 <img width="777" alt="Screenshot 2021-09-08 at 12 42 45" src="https://user-images.githubusercontent.com/37185376/132495818-358ea147-f4ac-4c23-92a0-5e8e6cff336c.png">
