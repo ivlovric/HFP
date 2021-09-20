@@ -55,7 +55,7 @@ Prometheus metrics in grafana
 
 <img width="777" alt="Screenshot 2021-09-08 at 12 42 45" src="https://user-images.githubusercontent.com/37185376/132495818-358ea147-f4ac-4c23-92a0-5e8e6cff336c.png">
 <img width="777" alt="Screenshot 2021-09-08 at 12 44 29" src="https://user-images.githubusercontent.com/37185376/132495959-f48bc102-0bcb-4863-bcf0-52c129ad831d.png">
-<img width="777" alt="Screenshot 2021-09-08 at 12 45 29" src="https://user-images.githubusercontent.com/37185376/132496030-cc72f74d-cd68-477c-9396-e77c03a2592c.png">
+
 
 
 ### Note
