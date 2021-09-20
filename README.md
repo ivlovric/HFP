@@ -28,6 +28,8 @@ Options:
     	Debug options are off or on (default "off")
   -prom string
     	Prometheus metrics port (default "8090")
+  -v  
+      Prints current HFP version
 ```
 
 ### Build
