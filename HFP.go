@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"time"
 )
 
+const AppVersion = "0.45"
+
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
 var IPfilter *string = flag.String("ipf", "", "IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy")
@@ -20,12 +23,11 @@ var IPfilterAction *string = flag.String("ipfa", "pass", "IP filter Action. Opti
 var Debug *string = flag.String("d", "off", "Debug options are off or on")
 var PrometheusPort *string = flag.String("prom", "8090", "Prometheus metrics port")
 
-var filterIPs []string
-var HFPlog string = "HFP.log"
-var HEPsavefile string = "HEP/HEP-saved.arch"
-
 var (
-	AppLogger *log.Logger
+	AppLogger   *log.Logger
+	filterIPs   []string
+	HFPlog      string = "HFP.log"
+	HEPsavefile string = "HEP/HEP-saved.arch"
 )
 
 func copyHEPtoFile(innet *net.TCPConn, file string) (int64, error) {
@@ -93,10 +95,9 @@ func proxyConn(conn *net.TCPConn) {
 	// The HEP3 header consists of a 4-octet protocol identifier with the fixed value 0x48455033
 	// (ASCII „HEP3“) and a two-octet length value (network byte order). The length value specifies
 	// the total packet length including the HEP3 or EEP3 ID, and the length field itself and the
-	// payload. It has a possible range of values between 6 and 65535 + adding 1K additionaly to
-	// anticipate some edge cases, bad agents and to make sure we proxy everything
+	// payload. It has a possible range of values between 6 and 65535
 
-	buf := make([]byte, 65535+1024)
+	buf := make([]byte, 65535)
 
 	//Connect out to backend with strict timeout
 	rConn, err := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
@@ -130,7 +131,7 @@ func proxyConn(conn *net.TCPConn) {
 		}
 
 		for _, ipf := range filterIPs {
-			if ((hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf)) && string(buf[:3]) == "HEP" && *IPfilter != "" && *IPfilterAction == "pass") || (string(buf[:3]) == "HEP" && *IPfilter == "" || (hepPkt.SrcIP != string(ipf) || hepPkt.DstIP != string(ipf)) && string(buf[:3]) == "HEP" && *IPfilter != "" && *IPfilterAction == "reject") {
+			if ((hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf)) && *IPfilter != "" && *IPfilterAction == "pass") || (*IPfilter == "" || (hepPkt.SrcIP != string(ipf) || hepPkt.DstIP != string(ipf)) && *IPfilter != "" && *IPfilterAction == "reject") {
 
 				go copyHEPtoFile(conn, HEPsavefile)
 			}
@@ -161,9 +162,11 @@ func proxyConn(conn *net.TCPConn) {
 
 	defer rConn.Close()
 
+	reader := bufio.NewReader(conn)
+
 	for {
-		//Read incomming packets
-		data, err_inconn := conn.Read(buf)
+		//Read incoming packets
+		data, err_inconn := reader.Read(buf)
 		if err_inconn != nil {
 			log.Println("-->X||Read IN packets error:", err_inconn)
 			if err_inconn != io.EOF {
@@ -176,7 +179,7 @@ func proxyConn(conn *net.TCPConn) {
 			log.Println("-->|| Got", data, "bytes on wire -- Total buffer size:", len(buf))
 		}
 
-		if *IPfilter != "" && *IPfilterAction == "pass" && string(buf[:3]) == "HEP" {
+		if *IPfilter != "" && *IPfilterAction == "pass" {
 			hepPkt, err := DecodeHEP(buf[:data])
 			if err != nil {
 				log.Println("Error decoding HEP", err)
@@ -215,7 +218,7 @@ func proxyConn(conn *net.TCPConn) {
 				}
 			}
 
-		} else if *IPfilter != "" && *IPfilterAction == "reject" && string(buf[:3]) == "HEP" {
+		} else if *IPfilter != "" && *IPfilterAction == "reject" {
 			hepPkt, err := DecodeHEP(buf[:data])
 			if err != nil {
 				log.Println("Error decoding HEP", err)
@@ -253,7 +256,7 @@ func proxyConn(conn *net.TCPConn) {
 				}
 			}
 
-		} else if *IPfilter == "" && string(buf[:3]) == "HEP" {
+		} else {
 			//Send HEP out to backend
 			if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 				log.Println("||--> Sending HEP OUT error:", err_HEPout)
@@ -265,19 +268,10 @@ func proxyConn(conn *net.TCPConn) {
 					log.Println("||--> Sending HEP OUT successful without filters to", rConn.RemoteAddr())
 				}
 			}
-		} else {
-			conn.Write([]byte("Not HEP - C'mon"))
-			log.Println("-->|| Got NON HEP", data, "bytes")
-			AppLogger.Println("-->|| Got NON HEP", data, "bytes")
-			nonHEPPackets.Inc()
-			if *Debug == "on" {
-				log.Printf("-->|| NON HEP packet content:%q", string(buf[:data]))
-				AppLogger.Println("-->|| NON HEP packet content:", string(buf[:data]))
-			}
 		}
 	}
 
-	//Incomming data from backend side
+	//Incoming data from backend side
 	data := make([]byte, 1024*8)
 	n, err := rConn.Read(data)
 	if err != nil {
@@ -311,7 +305,14 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	version := flag.Bool("v", false, "Prints current HFP version")
 	flag.Parse()
+
+	if *version {
+		fmt.Println(AppVersion)
+		os.Exit(0)
+	}
+
 	filterIPs = strings.Split(*IPfilter, ",")
 
 	errmkdir := os.Mkdir("HEP", 0755)
