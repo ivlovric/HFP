@@ -22,13 +22,6 @@ var connectionStatus = prometheus.NewGauge(
 	},
 )
 
-var nonHEPPackets = prometheus.NewCounter(
-	prometheus.CounterOpts{
-		Name: "hfp_non_hep_packets_in",
-		Help: "No of inbound NON HEP pakets",
-	},
-)
-
 var hepBytesInFile = prometheus.NewGauge(
 	prometheus.GaugeOpts{
 		Name: "hfp_hep_bytes_in_file",
@@ -53,7 +46,6 @@ var hepFileFlushesError = prometheus.NewCounter(
 func startMetrics(wg *sync.WaitGroup) {
 	prometheus.MustRegister(connectedClients)
 	prometheus.MustRegister(connectionStatus)
-	prometheus.MustRegister(nonHEPPackets)
 	prometheus.MustRegister(hepBytesInFile)
 	prometheus.MustRegister(hepFileFlushesSuccess)
 	prometheus.MustRegister(hepFileFlushesError)
