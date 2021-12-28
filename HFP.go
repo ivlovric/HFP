@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const AppVersion = "0.46"
+const AppVersion = "0.5"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -181,6 +181,9 @@ func proxyConn(conn *net.TCPConn) {
 		if *Debug == "on" {
 			log.Println("-->|| Got", data, "bytes on wire -- Total buffer size:", len(buf))
 		}
+
+		//Prometheus timestamp metric of incoming packet to detect lack of inbound HEP traffic
+		clientLastMetricTimestamp.SetToCurrentTime()
 
 		if *IPfilter != "" && *IPfilterAction == "pass" {
 			hepPkt, err := DecodeHEP(buf[:data])
