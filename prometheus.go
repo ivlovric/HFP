@@ -43,12 +43,20 @@ var hepFileFlushesError = prometheus.NewCounter(
 	},
 )
 
+var clientLastMetricTimestamp = prometheus.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "hfp_client_in_last_metric_timestamp",
+		Help: "Inbound client's last metric arrival",
+	},
+)
+
 func startMetrics(wg *sync.WaitGroup) {
 	prometheus.MustRegister(connectedClients)
 	prometheus.MustRegister(connectionStatus)
 	prometheus.MustRegister(hepBytesInFile)
 	prometheus.MustRegister(hepFileFlushesSuccess)
 	prometheus.MustRegister(hepFileFlushesError)
+	prometheus.MustRegister(clientLastMetricTimestamp)
 
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(":"+*PrometheusPort, nil)
