@@ -1,4 +1,4 @@
-# ![image](https://user-images.githubusercontent.com/1423657/147584283-25dd06e6-e686-486f-b6cd-d74bc7f590a9.png)
+# ![image](https://user-images.githubusercontent.com/1423657/147674071-15879110-4d36-40d4-9605-651b21301866.png)
 
 #### HEP Fidelity Proxy
 
