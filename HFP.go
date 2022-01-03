@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const AppVersion = "0.5"
+const AppVersion = "0.52"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -30,6 +30,38 @@ var (
 	HEPsavefile string = "HEP/HEP-saved.arch"
 )
 
+func initLoopbackConn(wg *sync.WaitGroup) {
+
+	//Connect loopback in
+	_, err := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
+
+	if err != nil {
+		log.Println("||-->X INITIAL Loopback IN", err)
+		AppLogger.Println("|| -->X INITIAL Loopback IN error", err)
+
+		//Connection retries
+		for range time.Tick(time.Second * 5) {
+			conn, err_outreconn := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
+			if err_outreconn != nil {
+				log.Println("||-->X Dial OUT INIT loopback reconnect failure - retrying", conn)
+
+			} else {
+
+				log.Println("||-->V Dial OUT reconnected INIT loopback", err_outreconn)
+				break
+			}
+		}
+		return
+
+	} else {
+		log.Println("||-->V INITIAL Dial LOOPBACK IN success")
+		AppLogger.Println("|| -->V INITIAL Dial LOOPBACK IN success")
+	}
+
+	wg.Done()
+
+}
+
 func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
 
 	destination, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
@@ -41,9 +73,9 @@ func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
 	nBytes, err := destination.Write(inbytes)
 
 	if err != nil {
-		log.Println("||-->XFile Send HEP from buffer to file error", err)
+		log.Println("||-->X File Send HEP from buffer to file error", err)
 	} else {
-		log.Println("||-->VFile Send HEP from buffer to file OK")
+		log.Println("||-->V File Send HEP from buffer to file OK")
 		go hepBytesInFile.Add(float64(nBytes))
 
 	}
@@ -148,11 +180,11 @@ func proxyConn(conn *net.TCPConn) {
 		for range time.Tick(time.Second * 10) {
 			conn, err_outreconn := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
 			if err_outreconn == nil {
-				log.Println("||-->V Dial OUT reconnected", err_outreconn)
-
+				log.Println("||-->V Dial OUT reconnected", conn)
+				copyHEPFileOut(HEPsavefile, conn)
 				break
 			}
-			log.Println("||-->X Dial OUT reconnect failure - retrying", conn)
+			log.Println("||-->X Dial OUT reconnect failure - retrying", err_outreconn)
 			AppLogger.Println("||-->X Dial OUT reconnect failure - retrying")
 		}
 		return
@@ -379,7 +411,10 @@ func main() {
 		go handleConn(pending, complete)
 	}
 	go startMetrics(&wg)
+	go initLoopbackConn(&wg)
+
 	wg.Wait()
+
 	go closeConn(complete)
 
 	for {
