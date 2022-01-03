@@ -51,6 +51,7 @@ var clientLastMetricTimestamp = prometheus.NewGauge(
 )
 
 func startMetrics(wg *sync.WaitGroup) {
+	wg.Add(1)
 	prometheus.MustRegister(connectedClients)
 	prometheus.MustRegister(connectionStatus)
 	prometheus.MustRegister(hepBytesInFile)
