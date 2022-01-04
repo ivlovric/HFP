@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const AppVersion = "0.52"
+const AppVersion = "0.54"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -33,7 +33,7 @@ var (
 func initLoopbackConn(wg *sync.WaitGroup) {
 
 	//Connect loopback in
-	_, err := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
+	outnet, err := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
 
 	if err != nil {
 		log.Println("||-->X INITIAL Loopback IN", err)
@@ -43,19 +43,25 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 		for range time.Tick(time.Second * 5) {
 			conn, err_outreconn := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
 			if err_outreconn != nil {
-				log.Println("||-->X Dial OUT INIT loopback reconnect failure - retrying", conn)
+				log.Println("||-->X Dial OUT INIT loopback reconnect failure - retrying", err_outreconn)
 
 			} else {
-
-				log.Println("||-->V Dial OUT reconnected INIT loopback", err_outreconn)
+				log.Println("||-->V Dial OUT reconnected INIT loopback", conn)
 				break
 			}
 		}
 		return
 
 	} else {
-		log.Println("||-->V INITIAL Dial LOOPBACK IN success")
-		AppLogger.Println("|| -->V INITIAL Dial LOOPBACK IN success")
+		_, err := outnet.Write([]byte("HELLO HFP"))
+		if err != nil {
+			log.Println("||-->X Send HELLO HFP error", err)
+			AppLogger.Println("||-->X Send HELLO HFP error", err)
+		} else {
+			log.Println("-->HELLO HFP|| INITIAL Dial LOOPBACK IN success")
+			AppLogger.Println("-->HELLO HFP|| INITIAL Dial LOOPBACK IN success")
+		}
+
 	}
 
 	wg.Done()
@@ -84,23 +90,20 @@ func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
 
 }
 
-func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
+func copyHEPFileOut(outnet net.Conn) (int, error) {
 
 	HEPFileData, HEPFileDataerr := ioutil.ReadFile(HEPsavefile)
 	if HEPFileDataerr != nil {
 		fmt.Println("Read HEP file error", HEPFileDataerr)
 	}
 
-	rConn, err := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
-
 	//Send Logged HEP upon reconnect out to backend
-	hl, err := rConn.Write(HEPFileData)
+	hl, err := outnet.Write(HEPFileData)
 	if err != nil {
 		log.Println("||-->X Send HEP from LOG error", err)
 		AppLogger.Println("||-->X Send HEP from LOG error", err)
 		hepFileFlushesError.Inc()
 	} else {
-
 		fi, err := os.Stat(HEPsavefile)
 		if err != nil {
 			log.Println("Cannot stat HEP log file", err)
@@ -117,9 +120,6 @@ func copyHEPFileOut(file string, outnet net.Conn) (int, error) {
 			hepFileFlushesSuccess.Inc()
 		}
 	}
-
-	defer rConn.Close()
-	//	nBytes, err := io.Copy(destination, innet)
 
 	return hl, err
 }
@@ -181,7 +181,7 @@ func proxyConn(conn *net.TCPConn) {
 			conn, err_outreconn := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
 			if err_outreconn == nil {
 				log.Println("||-->V Dial OUT reconnected", conn)
-				copyHEPFileOut(HEPsavefile, conn)
+				copyHEPFileOut(conn)
 				break
 			}
 			log.Println("||-->X Dial OUT reconnect failure - retrying", err_outreconn)
@@ -192,7 +192,7 @@ func proxyConn(conn *net.TCPConn) {
 		log.Println("||--> Connected OUT", rConn.RemoteAddr())
 		AppLogger.Println("||--> Connected OUT", rConn.RemoteAddr())
 		connectionStatus.Set(1)
-		copyHEPFileOut(HEPsavefile, rConn)
+		copyHEPFileOut(rConn)
 	}
 
 	defer rConn.Close()
@@ -231,7 +231,7 @@ func proxyConn(conn *net.TCPConn) {
 
 			var accepted bool = false
 			for _, ipf := range filterIPs {
-				if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) {
+				if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) || string(buf[:data]) == "HELLO HFP" {
 
 					//Send HEP out to backend
 					if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
@@ -242,7 +242,11 @@ func proxyConn(conn *net.TCPConn) {
 						return
 					} else {
 						if *Debug == "on" {
-							log.Println("||--> Sending HEP OUT successful with filter for", string(ipf), "to", rConn.RemoteAddr())
+							if string(buf[:data]) == "HELLO HFP" {
+								log.Println("||--> Sending init HELLO HFP successful with filter for", string(ipf), "to", rConn.RemoteAddr())
+							} else {
+								log.Println("||--> Sending HEP OUT successful with filter for", string(ipf), "to", rConn.RemoteAddr())
+							}
 						}
 						accepted = true
 
@@ -303,7 +307,11 @@ func proxyConn(conn *net.TCPConn) {
 				return
 			} else {
 				if *Debug == "on" {
-					log.Println("||--> Sending HEP OUT successful without filters to", rConn.RemoteAddr())
+					if string(buf[:data]) == "HELLO HFP" {
+						log.Println("||--> Sending init HELLO HFP successful without filters to", rConn.RemoteAddr())
+					} else {
+						log.Println("||--> Sending HEP OUT successful without filters to", rConn.RemoteAddr())
+					}
 				}
 			}
 		}
