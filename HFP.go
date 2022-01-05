@@ -36,17 +36,17 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 	outnet, err := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
 
 	if err != nil {
-		log.Println("||-->X INITIAL Loopback IN", err)
-		AppLogger.Println("|| -->X INITIAL Loopback IN error", err)
+		log.Println("c==>X|| INITIAL Loopback IN", err)
+		AppLogger.Println("c==>X|| INITIAL Loopback IN error", err)
 
 		//Connection retries
 		for range time.Tick(time.Second * 5) {
 			conn, err_outreconn := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
 			if err_outreconn != nil {
-				log.Println("||-->X Dial OUT INIT loopback reconnect failure - retrying", err_outreconn)
+				log.Println("c==>X|| Dial OUT INIT loopback reconnect failure - retrying", err_outreconn)
 
 			} else {
-				log.Println("||-->V Dial OUT reconnected INIT loopback", conn)
+				log.Println("c==>V|| Dial OUT reconnected INIT loopback", conn)
 				break
 			}
 		}
@@ -55,11 +55,11 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 	} else {
 		_, err := outnet.Write([]byte("HELLO HFP"))
 		if err != nil {
-			log.Println("||-->X Send HELLO HFP error", err)
-			AppLogger.Println("||-->X Send HELLO HFP error", err)
+			log.Println("HELLO HFP c==>X|| Send HELLO HFP error", err)
+			AppLogger.Println("HELLO HFP c==>X|| Send HELLO HFP error", err)
 		} else {
-			log.Println("-->HELLO HFP|| INITIAL Dial LOOPBACK IN success")
-			AppLogger.Println("-->HELLO HFP|| INITIAL Dial LOOPBACK IN success")
+			log.Println("HELLO HFP c==>V|| INITIAL Dial LOOPBACK IN success")
+			AppLogger.Println("HELLO HFP c==>V|| INITIAL Dial LOOPBACK IN success")
 		}
 
 	}
