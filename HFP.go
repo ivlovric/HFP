@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const AppVersion = "0.54"
+const AppVersion = "0.55"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -68,7 +68,7 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 
 }
 
-func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
+func copyHEPbufftoFile(inbytes *net.TCPConn, file string) (int64, error) {
 
 	destination, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -76,8 +76,7 @@ func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
 	}
 
 	defer destination.Close()
-	nBytes, err := destination.Write(inbytes)
-
+        nBytes, err := io.Copy(destination, inbytes)
 	if err != nil {
 		log.Println("||-->X File Send HEP from buffer to file error", err)
 	} else {
@@ -168,7 +167,7 @@ func proxyConn(conn *net.TCPConn) {
 		for _, ipf := range filterIPs {
 			if ((hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf)) && *IPfilter != "" && *IPfilterAction == "pass") || (*IPfilter == "" || (hepPkt.SrcIP != string(ipf) || hepPkt.DstIP != string(ipf)) && *IPfilter != "" && *IPfilterAction == "reject") {
 
-				go copyHEPbufftoFile(buf[:data], HEPsavefile)
+				go copyHEPbufftoFile(conn, HEPsavefile)
 			}
 		}
 
@@ -237,7 +236,7 @@ func proxyConn(conn *net.TCPConn) {
 					if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 						log.Println("||--> Sending HEP OUT error:", err_HEPout)
 						//	rb := bytes.NewReader(buf[:data])
-						go copyHEPbufftoFile(buf[:data], HEPsavefile)
+						go copyHEPbufftoFile(conn, HEPsavefile)
 						accepted = true
 						return
 					} else {
@@ -289,7 +288,7 @@ func proxyConn(conn *net.TCPConn) {
 				if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 					log.Println("||--> Sending HEP OUT error:", err_HEPout)
 					//rb := bytes.NewReader(buf[:data])
-					go copyHEPbufftoFile(buf[:data], HEPsavefile)
+					go copyHEPbufftoFile(conn, HEPsavefile)
 					return
 				} else {
 					if *Debug == "on" {
@@ -303,7 +302,7 @@ func proxyConn(conn *net.TCPConn) {
 			if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
 				log.Println("||--> Sending HEP OUT error:", err_HEPout)
 				// rb := bytes.NewReader(buf[:data])
-				go copyHEPbufftoFile(buf[:data], HEPsavefile)
+				go copyHEPbufftoFile(conn, HEPsavefile)
 				return
 			} else {
 				if *Debug == "on" {
