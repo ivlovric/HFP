@@ -79,7 +79,7 @@ func copyHEPbufftoFile(inconn *net.TCPConn, buff []byte, file string) (int64, er
 	nBytes, err := io.Copy(destination, inconn)
 	if err != nil {
 		log.Println("||-->X Send HEP from connection to file error", err)
-		if buff != nil {
+		if len(buff) > 0 {
 			log.Println("Trying to flush non empty buffer to HEP file instead...", err)
 			nBytesbuff, errbuf := destination.Write(buff)
 			if errbuf != nil {
