@@ -24,6 +24,32 @@ jobs:
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-extldflags=-static" -o HFP_amd64 *.go
         CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-extldflags=-static" -o HFP_arm64 *.go
 
+    - name: Patch NFPM Version
+      run: |
+          sudo sed -i "s/0.0.0/${{ github.ref_name }}/g" hfp.yml
+          
+    - name: Create deb package
+      id: nfpm-deb
+      uses: burningalchemist/nfpm-action@v1
+      env:
+          VERSION: ${{ github.event.release.tag_name }}
+      with:
+          packager: deb
+          config: hfp.yml
+          target: HFP_${{  github.ref_name }}_all.deb
+          
+    - name: Create rpm package
+      id: nfpm-rpm
+      uses: burningalchemist/nfpm-action@v1
+      env:
+          VERSION: ${{ github.event.release.tag_name }}
+      with:
+          packager: rpm
+          config: hfp.yml
+          target: HFP_${{  github.ref_name }}.amd64.rpm
+          
+
+
     - name: Upload Release
       uses: boxpositron/upload-multiple-releases@1.0.7
       env:
@@ -32,6 +58,8 @@ jobs:
           release_config: |
               ./HFP_amd64
               ./HFP_arm64
+              ./HFP_${{ github.ref_name }}_all.deb
+              ./HFP_${{ github.ref_name }}.amd64.rpm
           tag_name: ${{ github.ref_name }}
           release_name: hfp ${{ github.ref_name }}
           draft: false
