@@ -1,0 +1,20 @@
+name: hfp
+arch: amd64
+platform: linux
+version: 0.0.0
+release: 1
+section: default
+priority: extra
+replaces:
+  - hfp
+provides:
+  - hfp
+description: HFP High Fidelity HEP relay service
+vendor: sipcapture.org
+homepage: http://sipcapture.org
+license: AGPLv3
+contents:
+  - src: ./HFP_amd64
+    dst: /usr/local/bin/hfp
+  - src: hfp.service
+    dst: /etc/systemd/system/hfp.service
