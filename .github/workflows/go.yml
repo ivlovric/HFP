@@ -6,7 +6,7 @@ name: Build & Release
 on:
   workflow_dispatch:
   release:
-    types: [created]
+    types: [created, edited]
 
 jobs:
 
@@ -22,13 +22,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
-        go-version: 1.19
+        go-version: 1.21
 
     - name: Build
       run: CGO_ENABLED=0 go build -ldflags="-extldflags=-static" -o HFP *.go
 
     - name: Upload Release
-      if: github.event_name != 'pull_request'
       uses: boxpositron/upload-multiple-releases@1.0.7
       env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +35,7 @@ jobs:
           release_config: |
               ./HFP
           tag_name: ${{ github.ref_name }}
-          release_name: rtcagent_${{ github.ref_name }}
+          release_name: hfp ${{ github.ref_name }}
           draft: false
           prerelease: false
           overwrite: true    
