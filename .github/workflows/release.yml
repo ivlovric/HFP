@@ -48,8 +48,6 @@ jobs:
           config: hfp.yml
           target: HFP_${{  github.ref_name }}.amd64.rpm
           
-
-
     - name: Upload Release
       uses: boxpositron/upload-multiple-releases@1.0.7
       env:
