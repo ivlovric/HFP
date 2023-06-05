@@ -54,12 +54,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
           release_config: |
-              ./HFP_amd64
-              ./HFP_arm64
-              ./HFP_${{ github.ref_name }}_all.deb
-              ./HFP_${{ github.ref_name }}.amd64.rpm
+             ./HFP_amd64
+             ./HFP_arm64
+             ./HFP_${{ github.ref_name }}_all.deb
+             ./HFP_${{ github.ref_name }}.amd64.rpm
           tag_name: ${{ github.ref_name }}
-          release_name: hfp_${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
           draft: false
           prerelease: false
           overwrite: true    
