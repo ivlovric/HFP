@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const AppVersion = "0.55beta"
+const AppVersion = "0.56"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
