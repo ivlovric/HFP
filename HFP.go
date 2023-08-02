@@ -67,7 +67,7 @@ func connectToHEPBackend(dst string) net.Conn {
 			time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
 
 		} else {
-			log.Println("Connected to server successfully ", err)
+			log.Println("Connected to server successfully ", conn)
 			connectionStatus.Set(1)
 			copyHEPFileOut(conn)
 			return conn
