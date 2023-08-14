@@ -45,6 +45,9 @@ docker build -t sipcapture/HFP .
 docker run -ti --rm sipcapture/HFP -l :9062 -r 1.2.3.4:9062 (optional: -ipf <comma separated IP addresses> -ipfa <action for "ipf" list> -d <on> -prom <Prometheus port>)
 ```
 
+### Run
+<img width="590" alt="image" src="https://github.com/ivlovric/HFP/assets/37185376/d46745fc-29eb-47de-a71d-d24702d48411">
+
 ### Flow Diagrams
 
 
