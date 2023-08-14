@@ -15,7 +15,7 @@ import (
 	"github.com/guumaster/logsymbols"
 )
 
-const AppVersion = "1.0alpha"
+const AppVersion = "1.0"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -419,7 +419,7 @@ func main() {
 	if err != nil {
 		log.Println(logsymbols.Error, err)
 	}
-	fmt.Println(logsymbols.Info, "Saved HEP file is long", fi.Size(), "bytes\n")
+	fmt.Println(logsymbols.Info, "Saved HEP file is ", fi.Size(), "bytes\n")
 
 	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPFilterAction: %v\nPrometheus metrics: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction, *PrometheusPort)
 	AppLogger.Println("Listening for HEP on:", *localAddr, "\n", "Proxying HEP to:", *remoteAddr, "\n", "IPFilter:", *IPfilter, "\n", "IPFilterAction:", *IPfilterAction, "\n", "Prometheus metrics:", *PrometheusPort, "\n")
