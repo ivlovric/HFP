@@ -1,10 +1,9 @@
 package main
 
 import (
-	"bufio"
+	//"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -12,9 +11,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/guumaster/logsymbols"
 )
 
-const AppVersion = "0.56"
+const AppVersion = "1.0"
+
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -33,42 +35,291 @@ var (
 func initLoopbackConn(wg *sync.WaitGroup) {
 
 	//Connect loopback in
-	outnet, err := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
+	outnet, err := net.Dial("tcp4", *localAddr)
 
 	if err != nil {
-		log.Println("c==>X|| INITIAL Loopback IN", err)
-		AppLogger.Println("c==>X|| INITIAL Loopback IN error", err)
-
-		//Connection retries
-		for range time.Tick(time.Second * 5) {
-			conn, err_outreconn := net.DialTimeout("tcp4", *localAddr, 5*time.Second)
-			if err_outreconn != nil {
-				log.Println("c==>X|| Dial OUT INIT loopback reconnect failure - retrying", err_outreconn)
-
-			} else {
-				log.Println("c==>V|| Dial OUT reconnected INIT loopback", conn)
-				break
-			}
-		}
-		return
+		log.Println("c==>", logsymbols.Error, "|| INITIAL Loopback IN", err)
+		AppLogger.Println("c==>", logsymbols.Error, "|| INITIAL Loopback IN error", err)
 
 	} else {
 		_, err := outnet.Write([]byte("HELLO HFP"))
 		if err != nil {
-			log.Println("HELLO HFP c==>X|| Send HELLO HFP error", err)
-			AppLogger.Println("HELLO HFP c==>X|| Send HELLO HFP error", err)
+			log.Println("HELLO HFP c==>", logsymbols.Error, "|| Send HELLO HFP error", err)
+			AppLogger.Println("HELLO HFP c==>", logsymbols.Error, "|| Send HELLO HFP error", err)
 		} else {
-			log.Println("HELLO HFP c==>V|| INITIAL Dial LOOPBACK IN success")
-			AppLogger.Println("HELLO HFP c==>V|| INITIAL Dial LOOPBACK IN success")
+			log.Println("HELLO HFP c==>", logsymbols.Success, "|| INITIAL Dial LOOPBACK IN success")
+			AppLogger.Println("HELLO HFP c==>", logsymbols.Success, "|| INITIAL Dial LOOPBACK IN success")
 		}
 
 	}
 
+	wg.Add(1)
 	wg.Done()
 
 }
 
-func copyHEPbufftoFile(inconn *net.TCPConn, buff []byte, file string) (int64, error) {
+func connectToHEPBackend(dst string) net.Conn {
+
+
+	for {
+		conn, err := net.Dial("tcp", dst)
+		if err != nil {
+			log.Println("Unable to connect to server: ", err)
+			connectionStatus.Set(0)
+			time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
+
+		} else {
+			log.Println("Connected to server successfully ", conn)
+			connectionStatus.Set(1)
+			copyHEPFileOut(conn)
+			return conn
+		}
+
+	}
+}
+
+func handleConnection(clientConn net.Conn, destAddr string) {
+	var destConn net.Conn
+	//var err error
+
+	// use a buffer to transfer data between connections
+	buf := make([]byte, 65535)
+
+	//	for {
+	//		destConn, err = net.Dial("tcp", destAddr)
+	//		if err != nil {
+	//			log.Println("||-->", logsymbols.Error, "Dial OUT reconnect failure - retrying", err)
+	//			AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
+	//			copyHEPbufftoFile(buf[:n2], HEPsavefile)
+	//
+	//			//log.Println(err)
+	//			time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
+	//			continue
+	//		}
+	//		break
+	//	}
+	//defer destConn.Close()
+
+	go func() {
+		destConn = connectToHEPBackend(destAddr)
+	}()
+
+	//reader := bufio.NewReader(clientConn)
+	for {
+		//n, err := reader.Read(buf)
+		n, err := clientConn.Read(buf)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if *Debug == "on" {
+			log.Println("-->|| Got", n, "bytes on wire -- Total buffer size:", len(buf))
+		}
+
+		//Prometheus timestamp metric of incoming packet to detect lack of inbound HEP traffic
+		clientLastMetricTimestamp.SetToCurrentTime()
+
+		if destConn != nil {
+
+			//
+			if *IPfilter != "" && *IPfilterAction == "pass" {
+				hepPkt, err := DecodeHEP(buf[:n])
+				if err != nil {
+					log.Println("Error decoding HEP", err)
+				}
+
+				if *Debug == "on" {
+					//log.Println("HEP decoded ", hepPkt)
+					log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
+					log.Println("HEP decoded DST IP", hepPkt.DstIP)
+				}
+
+				var accepted bool = false
+				for _, ipf := range filterIPs {
+					if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) || string(buf[:n]) == "HELLO HFP" {
+
+						//Send HEP out to backend
+						if _, err_HEPout := destConn.Write(buf[:n]); err_HEPout != nil {
+							log.Println("||-->", logsymbols.Error, " Sending HEP OUT error:", err_HEPout)
+							//	rb := bytes.NewReader(buf[:data])
+							connectionStatus.Set(0)
+							copyHEPbufftoFile(buf[:n], HEPsavefile)
+							accepted = true
+
+							for {
+								destConn, err = net.Dial("tcp4", destAddr)
+								if err != nil {
+									log.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying", err)
+									AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
+									time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
+									continue
+								} else {
+									connectionStatus.Set(1)
+									copyHEPFileOut(destConn)
+								}
+								break
+							}
+							continue
+
+						} else {
+							if *Debug == "on" {
+								if string(buf[:n]) == "HELLO HFP" {
+									log.Println("||--> Sending init HELLO HFP successful with filter for", string(ipf), "to", destConn.RemoteAddr())
+								} else {
+									log.Println("||--> Sending HEP OUT successful with filter for", string(ipf), "to", destConn.RemoteAddr())
+								}
+							}
+							accepted = true
+
+						}
+					}
+				}
+
+				if !accepted {
+					if *Debug == "on" {
+						log.Println("-->", logsymbols.Error, "|| HEP filter not matched with source or destination IP in HEP packet", hepPkt.SrcIP, "or", hepPkt.DstIP)
+					}
+				}
+
+			} else if *IPfilter != "" && *IPfilterAction == "reject" {
+				hepPkt, err := DecodeHEP(buf[:n])
+				if err != nil {
+					log.Println("Error decoding HEP", err)
+				}
+
+				if *Debug == "on" {
+					//log.Println("HEP decoded ", hepPkt)
+					log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
+					log.Println("HEP decoded DST IP", hepPkt.DstIP)
+				}
+
+				var rejected bool = false
+				for _, ipf := range filterIPs {
+					if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) {
+						clientConn.Write([]byte("Rejecting IP"))
+						if *Debug == "on" {
+							log.Printf("-->|| Rejecting IP:%q", ipf)
+						}
+						rejected = true
+						break
+					}
+				}
+
+				if !rejected {
+					//Send HEP out to backend
+					if _, err_HEPout := destConn.Write(buf[:n]); err_HEPout != nil {
+						log.Println("||-->", logsymbols.Error, " Sending HEP OUT error:", err_HEPout)
+						//rb := bytes.NewReader(buf[:data])
+						connectionStatus.Set(0)
+						copyHEPbufftoFile(buf[:n], HEPsavefile)
+
+						for {
+							destConn, err = net.Dial("tcp4", destAddr)
+							if err != nil {
+								log.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying", err)
+								AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
+								time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
+								continue
+							} else {
+								connectionStatus.Set(1)
+								copyHEPFileOut(destConn)
+							}
+							break
+						}
+						continue
+
+						//return
+					} else {
+						if *Debug == "on" {
+							log.Println("||-->", logsymbols.Success, " Sending HEP OUT successful with filter to", destConn.RemoteAddr())
+						}
+					}
+				}
+
+			} else {
+				//Send HEP out to backend
+				_, err_HEPout := destConn.Write(buf[:n])
+				if err_HEPout != nil {
+					log.Println("||-->", logsymbols.Error, " Sending HEP OUT error:", err_HEPout)
+					// rb := bytes.NewReader(buf[:data])
+					connectionStatus.Set(0)
+					copyHEPbufftoFile(buf[:n], HEPsavefile)
+
+					for {
+						destConn, err = net.Dial("tcp4", destAddr)
+						if err != nil {
+							log.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying", err)
+							AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
+							time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
+							continue
+						} else {
+							connectionStatus.Set(1)
+							copyHEPFileOut(destConn)
+						}
+						break
+					}
+					continue
+
+					//	return
+				} else {
+					if *Debug == "on" {
+						if string(buf[:n]) == "HELLO HFP" {
+							log.Println("||-->", logsymbols.Success, " Sending init HELLO HFP successful without filters to", destConn.RemoteAddr())
+						} else {
+							log.Println("||-->", logsymbols.Success, " Sending HEP OUT successful without filters to", destConn.RemoteAddr())
+						}
+					}
+				}
+			}
+
+			//
+			//_, err = destConn.Write(buf[:n])
+			//	if err != nil {
+			//		log.Println(logsymbols.Error, err)
+			//		destConn.Close()
+			//		copyHEPbufftoFile(buf[:n], HEPsavefile)
+			//		for {
+			//			destConn, err = net.Dial("tcp4", destAddr)
+			//			if err != nil {
+			//				log.Println("||-->X Dial OUT reconnect failure - retrying", err)
+			//				AppLogger.Println("||-->X Dial OUT reconnect failure - retrying")
+			//				time.Sleep(time.Second * 5) // wait for 5 seconds before reconnecting
+			//				continue
+			//			} else {
+			//				copyHEPFileOut(destConn)
+			//			}
+			//			break
+			//		}
+			//		continue
+			//	}
+		} else {
+
+			hepPkt, err := DecodeHEP(buf[:n])
+			if err != nil {
+				log.Println("Error decoding HEP", err)
+			}
+
+			if *Debug == "on" {
+				//log.Println("HEP decoded ", hepPkt)
+				log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
+				log.Println("HEP decoded DST IP", hepPkt.DstIP)
+			}
+
+			for _, ipf := range filterIPs {
+				if ((hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) || string(buf[:n]) == "HELLO HFP") && *IPfilterAction == "pass") || ((hepPkt.SrcIP != string(ipf) || hepPkt.DstIP != string(ipf)) && *IPfilterAction == "reject") {
+					copyHEPbufftoFile(buf[:n], HEPsavefile)
+				} else {
+					log.Println("Not logging filtered HEP traffic")
+				}
+
+			}
+		}
+
+	}
+}
+
+func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
 
 	destination, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -76,22 +327,16 @@ func copyHEPbufftoFile(inconn *net.TCPConn, buff []byte, file string) (int64, er
 	}
 
 	defer destination.Close()
-	nBytes, err := io.Copy(destination, inconn)
-	if err != nil {
-		log.Println("||-->X Send HEP from connection to file error", err)
-		if len(buff) > 0 {
-			log.Println("Trying to flush non empty buffer to HEP file instead...", err)
-			nBytesbuff, errbuf := destination.Write(buff)
-			if errbuf != nil {
-				log.Println("||-->X Send HEP from buffer to file fallback error", errbuf)
-			} else {
-				log.Println("||-->V Send HEP from buffer to file fallback success")
-				go hepBytesInFile.Add(float64(nBytesbuff))
+	nBytes, err := destination.Write(inbytes)
 
-			}
-		}
+	if err != nil {
+		log.Println("||-->", logsymbols.Error, " File Send HEP from buffer to file error", err)
+		AppLogger.Println("||-->", logsymbols.Error, " File Send HEP from buffer to file error", err)
+
 	} else {
-		log.Println("||-->V File Send HEP from buffer to file OK")
+		log.Println("||-->", logsymbols.Success, " File Send HEP from buffer to file OK")
+		AppLogger.Println("||-->", logsymbols.Success, "File Send HEP from buffer to file OK")
+
 		go hepBytesInFile.Add(float64(nBytes))
 
 	}
@@ -121,9 +366,9 @@ func copyHEPFileOut(outnet net.Conn) (int, error) {
 		}
 
 		if fi.Size() > 0 {
-			log.Println("||-->V Send HEP from LOG OK -", hl, "bytes")
+			log.Println("||-->", logsymbols.Success, " Send HEP from LOG OK -", hl, "bytes")
 			log.Println("Clearing HEP file")
-			AppLogger.Println("||-->V Send HEP from LOG OK -", hl, "bytes")
+			AppLogger.Println("||-->", logsymbols.Success, " Send HEP from LOG OK -", hl, "bytes")
 			AppLogger.Println("Clearing HEP file")
 			//Recreate file, thus cleaning the content
 			os.Create(HEPsavefile)
@@ -134,233 +379,10 @@ func copyHEPFileOut(outnet net.Conn) (int, error) {
 	return hl, err
 }
 
-func proxyConn(conn *net.TCPConn) {
-
-	// Create buffer per "HEP3 Network Protocol Specification rev. 32"
-	// The HEP3 header consists of a 4-octet protocol identifier with the fixed value 0x48455033
-	// (ASCII „HEP3“) and a two-octet length value (network byte order). The length value specifies
-	// the total packet length including the HEP3 or EEP3 ID, and the length field itself and the
-	// payload. It has a possible range of values between 6 and 65535
-
-	buf := make([]byte, 65535)
-
-	//Connect out to backend with strict timeout
-	rConn, err := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
-
-	if err != nil {
-		log.Println("||-->X Dial OUT error", err)
-		AppLogger.Println("|| -->X Dial OUT error", err)
-		connectionStatus.Set(0)
-		data, err_inconn := conn.Read(buf)
-		if err_inconn != nil {
-			log.Println("-->X||Read IN packets error:", err_inconn)
-			AppLogger.Println("-->X||Read IN packets error:", err_inconn)
-			if err_inconn != io.EOF {
-				log.Println("-->X||Read IN packets error:", err_inconn)
-				AppLogger.Println("-->X||Read IN packets error:", err_inconn)
-				connectionStatus.Set(0)
-			}
-			return
-		}
-
-		connectionStatus.Set(1)
-		hepPkt, err := DecodeHEP(buf[:data])
-		if err != nil {
-			log.Println("Error decoding HEP", err)
-		}
-
-		if *Debug == "on" {
-			//log.Println("HEP decoded ", hepPkt)
-			log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
-			log.Println("HEP decoded DST IP", hepPkt.DstIP)
-		}
-
-		for _, ipf := range filterIPs {
-			if ((hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf)) && *IPfilter != "" && *IPfilterAction == "pass") || (*IPfilter == "" || (hepPkt.SrcIP != string(ipf) || hepPkt.DstIP != string(ipf)) && *IPfilter != "" && *IPfilterAction == "reject") {
-
-				go copyHEPbufftoFile(conn, buf[:data], HEPsavefile)
-
-			}
-		}
-
-		log.Printf("-->|| Receiving HEP to LOG")
-		AppLogger.Println("-->|| Receiving HEP to LOG")
-		connectionStatus.Set(0)
-
-		//Connection retries
-		for range time.Tick(time.Second * 10) {
-			conn, err_outreconn := net.DialTimeout("tcp4", *remoteAddr, 5*time.Second)
-			if err_outreconn == nil {
-				log.Println("||-->V Dial OUT reconnected", conn)
-				copyHEPFileOut(conn)
-				break
-			}
-			log.Println("||-->X Dial OUT reconnect failure - retrying", err_outreconn)
-			AppLogger.Println("||-->X Dial OUT reconnect failure - retrying")
-		}
-		return
-	} else {
-		log.Println("||--> Connected OUT", rConn.RemoteAddr())
-		AppLogger.Println("||--> Connected OUT", rConn.RemoteAddr())
-		connectionStatus.Set(1)
-		copyHEPFileOut(rConn)
-	}
-
-	defer rConn.Close()
-
-	reader := bufio.NewReader(conn)
-
-	for {
-		//Read incoming packets
-		data, err_inconn := reader.Read(buf)
-		if err_inconn != nil {
-			log.Println("-->X||Read IN packets error:", err_inconn)
-			if err_inconn != io.EOF {
-				log.Println("-->X||Read IN packets error:", err_inconn)
-			}
-			return
-		}
-
-		if *Debug == "on" {
-			log.Println("-->|| Got", data, "bytes on wire -- Total buffer size:", len(buf))
-		}
-
-		//Prometheus timestamp metric of incoming packet to detect lack of inbound HEP traffic
-		clientLastMetricTimestamp.SetToCurrentTime()
-
-		if *IPfilter != "" && *IPfilterAction == "pass" {
-			hepPkt, err := DecodeHEP(buf[:data])
-			if err != nil {
-				log.Println("Error decoding HEP", err)
-			}
-
-			if *Debug == "on" {
-				//log.Println("HEP decoded ", hepPkt)
-				log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
-				log.Println("HEP decoded DST IP", hepPkt.DstIP)
-			}
-
-			var accepted bool = false
-			for _, ipf := range filterIPs {
-				if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) || string(buf[:data]) == "HELLO HFP" {
-
-					//Send HEP out to backend
-					if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
-						log.Println("||--> Sending HEP OUT error:", err_HEPout)
-						//	rb := bytes.NewReader(buf[:data])
-						go copyHEPbufftoFile(conn, buf[:data], HEPsavefile)
-						accepted = true
-						return
-					} else {
-						if *Debug == "on" {
-							if string(buf[:data]) == "HELLO HFP" {
-								log.Println("||--> Sending init HELLO HFP successful with filter for", string(ipf), "to", rConn.RemoteAddr())
-							} else {
-								log.Println("||--> Sending HEP OUT successful with filter for", string(ipf), "to", rConn.RemoteAddr())
-							}
-						}
-						accepted = true
-
-					}
-				}
-			}
-
-			if accepted == false {
-				if *Debug == "on" {
-					log.Println("-->X|| HEP filter not matched with source or destination IP in HEP packet", hepPkt.SrcIP, "or", hepPkt.DstIP)
-				}
-			}
-
-		} else if *IPfilter != "" && *IPfilterAction == "reject" {
-			hepPkt, err := DecodeHEP(buf[:data])
-			if err != nil {
-				log.Println("Error decoding HEP", err)
-			}
-
-			if *Debug == "on" {
-				//log.Println("HEP decoded ", hepPkt)
-				log.Println("HEP decoded SRC IP", hepPkt.SrcIP)
-				log.Println("HEP decoded DST IP", hepPkt.DstIP)
-			}
-
-			var rejected bool = false
-			for _, ipf := range filterIPs {
-				if hepPkt.SrcIP == string(ipf) || hepPkt.DstIP == string(ipf) {
-					conn.Write([]byte("Rejecting IP"))
-					if *Debug == "on" {
-						log.Printf("-->X|| Rejecting IP:%q", ipf)
-					}
-					rejected = true
-					break
-				}
-			}
-
-			if rejected == false {
-				//Send HEP out to backend
-				if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
-					log.Println("||--> Sending HEP OUT error:", err_HEPout)
-					//rb := bytes.NewReader(buf[:data])
-					go copyHEPbufftoFile(conn, buf[:data], HEPsavefile)
-					return
-				} else {
-					if *Debug == "on" {
-						log.Println("||--> Sending HEP OUT successful with filter to", rConn.RemoteAddr())
-					}
-				}
-			}
-
-		} else {
-			//Send HEP out to backend
-			if _, err_HEPout := fmt.Fprint(rConn, string(buf[:data])); err_HEPout != nil {
-				log.Println("||--> Sending HEP OUT error:", err_HEPout)
-				// rb := bytes.NewReader(buf[:data])
-				go copyHEPbufftoFile(conn, buf[:data], HEPsavefile)
-				return
-			} else {
-				if *Debug == "on" {
-					if string(buf[:data]) == "HELLO HFP" {
-						log.Println("||--> Sending init HELLO HFP successful without filters to", rConn.RemoteAddr())
-					} else {
-						log.Println("||--> Sending HEP OUT successful without filters to", rConn.RemoteAddr())
-					}
-				}
-			}
-		}
-	}
-
-	//Incoming data from backend side
-	data := make([]byte, 1024*8)
-	n, err := rConn.Read(data)
-	if err != nil {
-		if err != io.EOF {
-			log.Println("||<-- Received:", err)
-			AppLogger.Println("||<-- Received:", err)
-			return
-		} else {
-			if *Debug == "on" {
-				log.Println("||<-- Received:", err, data[:n])
-				AppLogger.Println("||<-- Received:", err, data[:n])
-			}
-		}
-	}
-}
-
-func handleConn(in <-chan *net.TCPConn, out chan<- *net.TCPConn) {
-	for conn := range in {
-		proxyConn(conn)
-		out <- conn
-	}
-}
-
-func closeConn(in <-chan *net.TCPConn) {
-	for conn := range in {
-		conn.Close()
-	}
-}
-
 func main() {
 
 	var wg sync.WaitGroup
+	logsymbols.ForceColors()
 
 	version := flag.Bool("v", false, "Prints current HFP version")
 	flag.Parse()
@@ -381,7 +403,7 @@ func main() {
 		if os.IsNotExist(errhfexist) {
 			fmt.Println("HEP File doesnt exists - Creating", errhfexist)
 			_, errhfcreate := os.Create(HEPsavefile)
-			fmt.Println("-->|| Creating HEP file")
+			fmt.Println(logsymbols.Info, "-->|| Creating HEP file")
 			if errhfcreate != nil {
 				fmt.Println("Create file error", errhfcreate)
 				return
@@ -397,55 +419,56 @@ func main() {
 
 	fi, err := os.Stat(HEPsavefile)
 	if err != nil {
-		log.Println(err)
+		log.Println(logsymbols.Error, err)
 	}
-	fmt.Printf("Saved HEP file is %d bytes long\n", fi.Size())
+	fmt.Println(logsymbols.Info, "Saved HEP file is ", fi.Size(), "bytes\n")
 
 	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPFilterAction: %v\nPrometheus metrics: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction, *PrometheusPort)
 	AppLogger.Println("Listening for HEP on:", *localAddr, "\n", "Proxying HEP to:", *remoteAddr, "\n", "IPFilter:", *IPfilter, "\n", "IPFilterAction:", *IPfilterAction, "\n", "Prometheus metrics:", *PrometheusPort, "\n")
 
 	if *IPfilter == "" {
-		fmt.Printf("HFP started in proxy high performance mode\n__________________________________________\n")
-		AppLogger.Println("HFP started in proxy high performance mode\n__________________________________________\n")
+		fmt.Println(logsymbols.Success, "HFP starting in proxy high performance mode\n__________________________________________\n")
+		AppLogger.Println(logsymbols.Success, "HFP starting in proxy high performance mode\n__________________________________________\n")
 	} else {
-		fmt.Printf("HFP started in proxy processing mode\n_____________________________________\n")
-		AppLogger.Println("HFP started in proxy processing mode\n_____________________________________\n")
+		fmt.Println(logsymbols.Success, "HFP starting in proxy processing mode\n_____________________________________\n")
+		AppLogger.Println(logsymbols.Success, "HFP starting in proxy processing mode\n_____________________________________\n")
 	}
 
 	addr, err := net.ResolveTCPAddr("tcp", *localAddr)
 	if err != nil {
-		log.Println(err)
+		log.Println(logsymbols.Error, err)
 		return
 	}
-
 	listener, err := net.ListenTCP("tcp4", addr)
 	if err != nil {
-		fmt.Println("X|| Server starting error", err)
+		fmt.Println(logsymbols.Error, "|| HFP starting error", err)
 		os.Exit(1)
+		//	} else {
+		//		fmt.Println(logsymbols.Success, "|| HFP listener started")
+		//
+		//	}
 	}
+	defer listener.Close()
 
-	pending, complete := make(chan *net.TCPConn), make(chan *net.TCPConn)
-
-	for i := 1; i <= 4; i++ {
-		go handleConn(pending, complete)
-	}
 	go startMetrics(&wg)
 	go initLoopbackConn(&wg)
 
 	wg.Wait()
 
-	go closeConn(complete)
-
 	for {
-		conn, err := listener.AcceptTCP()
-		log.Println("-->|| New connection from", conn.RemoteAddr())
-		AppLogger.Println("-->|| New connection from", conn.RemoteAddr())
+		clientConn, err := listener.AcceptTCP()
+		log.Println(logsymbols.Success, "-->|| New connection from", clientConn.RemoteAddr())
+		AppLogger.Println(logsymbols.Success, "-->|| New connection from", clientConn.RemoteAddr())
 		connectedClients.Inc()
 
 		if err != nil {
-			log.Println(err)
+			log.Println(logsymbols.Error, err)
 			return
 		}
-		pending <- conn
+
+		for i := 1; i <= 2; i++ {
+			go handleConnection(clientConn, *remoteAddr)
+		}
 	}
+
 }
