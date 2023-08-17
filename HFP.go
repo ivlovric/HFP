@@ -17,6 +17,7 @@ import (
 
 const AppVersion = "1.0"
 
+
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
 var IPfilter *string = flag.String("ipf", "", "IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy")
@@ -58,6 +59,7 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 }
 
 func connectToHEPBackend(dst string) net.Conn {
+
 
 	for {
 		conn, err := net.Dial("tcp", dst)
