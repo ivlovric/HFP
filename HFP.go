@@ -1,10 +1,8 @@
 package main
 
 import (
-	//"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -15,8 +13,7 @@ import (
 	"github.com/guumaster/logsymbols"
 )
 
-const AppVersion = "1.0"
-
+const AppVersion = "0.55.3"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
@@ -59,7 +56,6 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 }
 
 func connectToHEPBackend(dst string) net.Conn {
-
 
 	for {
 		conn, err := net.Dial("tcp", dst)
@@ -347,7 +343,7 @@ func copyHEPbufftoFile(inbytes []byte, file string) (int64, error) {
 
 func copyHEPFileOut(outnet net.Conn) (int, error) {
 
-	HEPFileData, HEPFileDataerr := ioutil.ReadFile(HEPsavefile)
+	HEPFileData, HEPFileDataerr := os.ReadFile(HEPsavefile)
 	if HEPFileDataerr != nil {
 		fmt.Println("Read HEP file error", HEPFileDataerr)
 	}
