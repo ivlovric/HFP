@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +18,8 @@ const AppVersion = "0.55.3"
 
 var localAddr *string = flag.String("l", ":9060", "Local HEP listening address")
 var remoteAddr *string = flag.String("r", "192.168.2.2:9060", "Remote HEP address")
+var remoteProto *string = flag.String("p", "tcp", "Remote Proto type : tcp / tls")
+var skipVerify *bool = flag.Bool("s", false, "Skip verify tls certificate")
 var IPfilter *string = flag.String("ipf", "", "IP filter address from HEP SRC or DST chunks. Option can use multiple IP as comma sepeated values. Default is no filter without processing HEP acting as high performance HEP proxy")
 var IPfilterAction *string = flag.String("ipfa", "pass", "IP filter Action. Options are pass or reject")
 var Debug *string = flag.String("d", "off", "Debug options are off or on")
@@ -55,10 +58,19 @@ func initLoopbackConn(wg *sync.WaitGroup) {
 
 }
 
-func connectToHEPBackend(dst string) net.Conn {
+func connectToHEPBackend(dst, proto string) net.Conn {
 
 	for {
-		conn, err := net.Dial("tcp", dst)
+
+		var conn net.Conn
+		var err error
+
+		if proto == "tls" {
+			conn, err = tls.Dial("tcp", dst, &tls.Config{InsecureSkipVerify: *skipVerify})
+		} else {
+			conn, err = net.Dial("tcp", dst)
+		}
+
 		if err != nil {
 			log.Println("Unable to connect to server: ", err)
 			connectionStatus.Set(0)
@@ -74,7 +86,7 @@ func connectToHEPBackend(dst string) net.Conn {
 	}
 }
 
-func handleConnection(clientConn net.Conn, destAddr string) {
+func handleConnection(clientConn net.Conn, destAddr, destProto string) {
 	var destConn net.Conn
 	//var err error
 
@@ -97,7 +109,7 @@ func handleConnection(clientConn net.Conn, destAddr string) {
 	//defer destConn.Close()
 
 	go func() {
-		destConn = connectToHEPBackend(destAddr)
+		destConn = connectToHEPBackend(destAddr, destProto)
 	}()
 
 	//reader := bufio.NewReader(clientConn)
@@ -144,7 +156,12 @@ func handleConnection(clientConn net.Conn, destAddr string) {
 							accepted = true
 
 							for {
-								destConn, err = net.Dial("tcp4", destAddr)
+								if destProto == "tls" {
+									destConn, err = tls.Dial("tcp", destAddr, &tls.Config{InsecureSkipVerify: *skipVerify})
+								} else {
+									destConn, err = net.Dial("tcp", destAddr)
+								}
+
 								if err != nil {
 									log.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying", err)
 									AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
@@ -211,7 +228,13 @@ func handleConnection(clientConn net.Conn, destAddr string) {
 						copyHEPbufftoFile(buf[:n], HEPsavefile)
 
 						for {
-							destConn, err = net.Dial("tcp4", destAddr)
+
+							if destProto == "tls" {
+								destConn, err = tls.Dial("tcp", destAddr, &tls.Config{InsecureSkipVerify: *skipVerify})
+							} else {
+								destConn, err = net.Dial("tcp", destAddr)
+							}
+
 							if err != nil {
 								log.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying", err)
 								AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
@@ -243,7 +266,13 @@ func handleConnection(clientConn net.Conn, destAddr string) {
 					copyHEPbufftoFile(buf[:n], HEPsavefile)
 
 					for {
-						destConn, err = net.Dial("tcp4", destAddr)
+
+						if destProto == "tls" {
+							destConn, err = tls.Dial("tcp", destAddr, &tls.Config{InsecureSkipVerify: *skipVerify})
+						} else {
+							destConn, err = net.Dial("tcp", destAddr)
+						}
+
 						if err != nil {
 							log.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying", err)
 							AppLogger.Println("||-->", logsymbols.Error, " Dial OUT reconnect failure - retrying")
@@ -417,17 +446,16 @@ func main() {
 	if err != nil {
 		log.Println(logsymbols.Error, err)
 	}
-	fmt.Println(logsymbols.Info, "Saved HEP file is ", fi.Size(), "bytes\n")
+	fmt.Println(logsymbols.Info, "Saved HEP file is ", fi.Size(), "bytes")
 
-	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nIPFilterAction: %v\nPrometheus metrics: %v\n\n", *localAddr, *remoteAddr, *IPfilter, *IPfilterAction, *PrometheusPort)
-	AppLogger.Println("Listening for HEP on:", *localAddr, "\n", "Proxying HEP to:", *remoteAddr, "\n", "IPFilter:", *IPfilter, "\n", "IPFilterAction:", *IPfilterAction, "\n", "Prometheus metrics:", *PrometheusPort, "\n")
-
+	fmt.Printf("Listening for HEP on: %v\nProxying HEP to: %v\nIPFilter: %v\nProto HEP: %v\nIPFilterAction: %v\nPrometheus metrics: %v\n\n", *localAddr, *remoteAddr, *remoteProto, *IPfilter, *IPfilterAction, *PrometheusPort)
+	AppLogger.Println("Listening for HEP on:", *localAddr, "\n", "Proxying HEP to:", *remoteAddr, "\n", "Proto HEP:", *remoteProto, "\n", "IPFilter:", *IPfilter, "\n", "IPFilterAction:", *IPfilterAction, "\n", "Prometheus metrics:", *PrometheusPort)
 	if *IPfilter == "" {
-		fmt.Println(logsymbols.Success, "HFP starting in proxy high performance mode\n__________________________________________\n")
-		AppLogger.Println(logsymbols.Success, "HFP starting in proxy high performance mode\n__________________________________________\n")
+		fmt.Println(logsymbols.Success, "HFP starting in proxy high performance mode\n__________________________________________")
+		AppLogger.Println(logsymbols.Success, "HFP starting in proxy high performance mode\n__________________________________________")
 	} else {
-		fmt.Println(logsymbols.Success, "HFP starting in proxy processing mode\n_____________________________________\n")
-		AppLogger.Println(logsymbols.Success, "HFP starting in proxy processing mode\n_____________________________________\n")
+		fmt.Println(logsymbols.Success, "HFP starting in proxy processing mode\n_____________________________________")
+		AppLogger.Println(logsymbols.Success, "HFP starting in proxy processing mode\n_____________________________________")
 	}
 
 	addr, err := net.ResolveTCPAddr("tcp", *localAddr)
@@ -463,7 +491,7 @@ func main() {
 		}
 
 		for i := 1; i <= 2; i++ {
-			go handleConnection(clientConn, *remoteAddr)
+			go handleConnection(clientConn, *remoteAddr, *remoteProto)
 		}
 	}
 
